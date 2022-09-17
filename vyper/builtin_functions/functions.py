@@ -2263,6 +2263,81 @@ class ISqrt(BuiltinFunction):
             return b1.resolve(IRnode.from_list(ret, typ=BaseType("uint256")))
 
 
+class ExpWad(BuiltinFunction):
+
+    _id = "exp_wad"
+    _inputs = [("x", Int256Definition())]
+    _return_type = Int256Definition()
+
+    @process_inputs
+    def build_IR(self, expr, args, kwargs, context):
+
+        # inspired by solmate: https://github.com/transmissions11/solmate/blob/bff24e835192470ed38bf15dbed6084c2d723ace/src/utils/SignedWadMath.sol#L82
+
+        p, q, k, y, r = "p", "q", "k", "y", "r"
+        arg = args[0]
+        with arg.cache_when_complex("x") as (b1, x):
+            ret = [
+                "seq",
+                [
+                    "if",
+                    ["le", x, -42139678854452767551],
+                    ["set", r, 0],
+                ],
+                [
+                    "if",
+                    ["ge", x, 135305999368893231589],
+                    ["set", r, 0],  # TODO: add raise "exponent overflow"
+                ],
+            ]
+
+            # TODO: check if we can mutate x here:
+            ret.append(["set", x, ["div", shl(78, x), 5 ** 18]])
+            ret.append(
+                [
+                    "set",
+                    k,
+                    shr(96, ["add", ["div", shl(96, x), 54916777467707473351141471128], 2 ** 95]),
+                ]
+            )
+            ret.append(["set", x, ["sub", x, ["mul", k, 54916777467707473351141471128]]])
+
+            ret.append(["set", y, ["add", x, 1346386616545796478920950773328]])
+            ret.append(
+                ["set", y, ["add", shr(96, ["mul", y, x]), 57155421227552351082224309758442]]
+            )
+            ret.append(["set", p, ["add", y, ["sub", x, 94201549194550492254356042504812]]])
+            ret.append(
+                ["set", p, ["add", shr(96, ["mul", p, y]), 28719021644029726153956944680412240]]
+            )
+            ret.append(
+                ["set", p, ["add", ["mul", p, x], shl(96, 4385272521454847904659076985693276)]]
+            )
+
+            temp = shr(96, ["mul", q, x])
+            ret.append(["set", q, ["sub", x, 2855989394907223263936484059900]])
+            ret.append(["set", q, ["add", temp, 50020603652535783019961831881945]])
+            ret.append(["set", q, ["sub", temp, 533845033583426703283633433725380]])
+            ret.append(["set", q, ["add", temp, 3604857256930695427073651918091429]])
+            ret.append(["set", q, ["sub", temp, 14423608567350463180887372962807573]])
+            ret.append(["set", q, ["add", temp, 26449188498355588339934803723976023]])
+
+            ret.append(["set", r, ["div", p, q]])
+
+            # r = int256((uint256(r) * 3822833074963236453042738258902158003155416615667) >> uint256(195 - k));
+            # TODO: make sure r is not negative
+            ret.append(
+                [
+                    "set",
+                    r,
+                    shr(195 - k, ["mul", r, 3822833074963236453042738258902158003155416615667]),
+                ]
+            )
+
+            # TODO: make sure 'r' is returned:
+            return b1.resolve(IRnode.from_list(ret, typ=BaseType("int256")))
+
+
 class Empty(TypenameFoldedFunction):
 
     _id = "empty"
@@ -2684,6 +2759,7 @@ DISPATCH_TABLE = {
     "min_value": MinValue(),
     "max_value": MaxValue(),
     "epsilon": Epsilon(),
+    "exp_wad": ExpWad(),
 }
 
 STMT_DISPATCH_TABLE = {
