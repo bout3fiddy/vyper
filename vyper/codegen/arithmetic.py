@@ -237,12 +237,22 @@ def safe_mul(x, y):
             # assert (res/y == x | y == 0)
             ok = ["or", ["eq", [DIV, res, y], x], ["iszero", y]]
             
+        # uint256
         if not typ.is_signed and typ.bits == 256:
-            # special case: use https://xn--2-umb.com/17/full-mul/
-            # but revert only if upper 256 bits is nonzero
-            # (so, it has its own custom overflow checks)
+            # special case: use https://xn--2-umb.com/17/full-mul :
+            #
+            #   assembly {
+            #       let mm := mulmod(a, b, not(0))
+            #       r0 := mul(a, b)
+            #       r1 := sub(sub(mm, r0), lt(mm, r0))
+            #   }
+            #
+            # since if it overflows, upper 256th bit will be nonzero.
+            # revert if r1 > 0.
             
-            return 
+            mm = IRnode.from_list(["mulmod", x, y, ["not", 0]])
+            r1 = IRnode.from_list(["sub", ["sub", mm, res], ["lt", mm, res]])
+            ok = ["eq", r1, 0]
 
         # int256
         if typ.is_signed and typ.bits == 256:
