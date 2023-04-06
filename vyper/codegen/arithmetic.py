@@ -236,6 +236,13 @@ def safe_mul(x, y):
         if typ.bits > 128:  # check overflow mod 256
             # assert (res/y == x | y == 0)
             ok = ["or", ["eq", [DIV, res, y], x], ["iszero", y]]
+            
+        if not typ.is_signed and typ.bits == 256:
+            # special case: use https://xn--2-umb.com/17/full-mul/
+            # but revert only if upper 256 bits is nonzero
+            # (so, it has its own custom overflow checks)
+            
+            return 
 
         # int256
         if typ.is_signed and typ.bits == 256:
