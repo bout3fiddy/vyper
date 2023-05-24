@@ -255,6 +255,70 @@ def test(code_ofst: uint256) -> address:
 
     # code_offset=EIP_170_LIMIT definitely not fine!
     assert_tx_failed(lambda: d.test(EIP_170_LIMIT))
+    
+    
+def test_create_from_blueprint_default_code_offset(
+    get_contract,
+    deploy_blueprint_for,
+    w3,
+    keccak,
+    create2_address_of,
+    assert_tx_failed,
+):
+    code = """
+@external
+def foo() -> uint256:
+    return 123
+    """
+    
+    blueprint_prefix = b"\xfe\71\x00"
+    assert len(blueprint_prefix) == 3
+    prefix_len = len(blueprint_prefix)
+    deployer_code = f"""
+created_address: public(address)
+
+@external
+def test(target: address):
+    self.created_address = create_from_blueprint(target)
+
+@external
+def test2(target: address, salt: bytes32):
+    self.created_address = create_from_blueprint(target, salt=salt)
+    """
+
+    # deploy a foo so we can compare its bytecode with factory deployed version
+    foo_contract = get_contract(code)
+    expected_runtime_code = w3.eth.get_code(foo_contract.address)
+
+    f, FooContract = deploy_blueprint_for(code, initcode_prefix=blueprint_prefix)
+
+    d = get_contract(deployer_code)
+
+    d.test(f.address, transact={})
+
+    test = FooContract(d.created_address())
+    assert w3.eth.get_code(test.address) == expected_runtime_code
+    assert test.foo() == 123
+
+    # extcodesize check
+    zero_address = "0x" + "00" * 20
+    assert_tx_failed(lambda: d.test(zero_address))
+
+    # now same thing but with create2
+    salt = keccak(b"vyper")
+    d.test2(f.address, salt, transact={})
+
+    test = FooContract(d.created_address())
+    assert w3.eth.get_code(test.address) == expected_runtime_code
+    assert test.foo() == 123
+
+    # check if the create2 address matches our offchain calculation
+    initcode = w3.eth.get_code(f.address)
+    initcode = initcode[len(blueprint_prefix) :]  # strip the prefix
+    assert HexBytes(test.address) == create2_address_of(d.address, salt, initcode)
+
+    # can't collide addresses
+    assert_tx_failed(lambda: d.test2(f.address, salt))
 
 
 # test create_from_blueprint with args
